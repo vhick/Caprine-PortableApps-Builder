@@ -4,7 +4,7 @@ import argparse, configparser, hashlib, json, struct, zipfile
 p=argparse.ArgumentParser()
 p.add_argument('--stage', required=True)
 p.add_argument('--out',required=True)
-p.add_argument('--revision',default='r1')
+p.add_argument('--revision',default='r2')
 a=p.parse_args()
 root=Path(a.stage).resolve(); out=Path(a.out); out.mkdir(parents=True,exist_ok=True)
 assert root.name=='CaprinePortable',f'Unexpected portable root {root.name}'

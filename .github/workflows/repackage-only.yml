@@ -8,10 +8,10 @@ on:
         type: string
         required: true
       package_revision:
-        description: 'New package revision; use r2, r3, etc. (must not conflict with an existing release tag)'
+        description: 'New package revision; e.g. r3 for an r2-r2 source (must not conflict with existing release)'
         type: string
         required: true
-        default: r2
+        default: r3
       engine:
         type: choice
         options:
@@ -85,7 +85,7 @@ jobs:
           files: |
             dist/*.zip
             dist/*.paf.exe
-          tag: portable-v${{ steps.prep.outputs.version }}-r1-${{ inputs.package_revision }}
+          tag: portable-v${{ steps.prep.outputs.version }}-${{ steps.prep.outputs.builder_revision }}-${{ inputs.package_revision }}
           release-title: Caprine Portable ${{ steps.prep.outputs.version }} (${{ inputs.package_revision }} packaging-only)
           keep-releases: '3'
           prune: 'false'
@@ -96,7 +96,7 @@ jobs:
           files: |
             dist/*.zip
             dist/*.paf.exe
-          tag: portable-v${{ steps.prep.outputs.version }}-r1-${{ inputs.package_revision }}
+          tag: portable-v${{ steps.prep.outputs.version }}-${{ steps.prep.outputs.builder_revision }}-${{ inputs.package_revision }}
           release-title: Caprine Portable ${{ steps.prep.outputs.version }} (${{ inputs.package_revision }} packaging-only)
           keep-releases: '3'
           prune: 'false'

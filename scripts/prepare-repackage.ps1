@@ -1,8 +1,11 @@
 param([Parameter(Mandatory)][string]$SourceRelease)
 $ErrorActionPreference='Stop'
 if($SourceRelease -notmatch '^portable-v\d+\.\d+\.\d+-r[0-9]+-r[0-9]+$') {
- throw 'Provide an exact trusted builder release tag e.g. portable-v2.62.1-r1-r1'
+ throw 'Provide an exact trusted builder release tag e.g. portable-v2.62.0-r2-r2'
 }
+# Keep the original builder revision from the trusted source release for repackaged release tags.
+$builderRevision=([regex]::Match($SourceRelease, '-(r[0-9]+)-r[0-9]+$')).Groups[1].Value
+if (-not $builderRevision) { throw 'Unable to parse source builder revision' }
 $repo=(Get-Location).Path
 $download=Join-Path $repo 'work/input'
 New-Item -ItemType Directory -Force -Path $download|Out-Null
@@ -28,5 +31,7 @@ $version=(Select-String -LiteralPath $ini -Pattern '^DisplayVersion=(\d+\.\d+\.\
 if(-not $version){throw 'Cannot determine upstream version from verified appinfo.ini'}
 New-Item -ItemType Directory -Force (Join-Path $repo 'dist') | Out-Null
 Copy-Item -LiteralPath $zips[0].FullName -Destination (Join-Path $repo 'dist')
-if($env:GITHUB_OUTPUT) {"version=$version"|Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8}
+if($env:GITHUB_OUTPUT) {
+ @("version=$version", "builder_revision=$builderRevision") | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+}
 Write-Host "Verified prior ZIP $($zips[0].Name); version $version"

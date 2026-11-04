@@ -1,4 +1,4 @@
-param([string]$Version='', [switch]$ForceBuild, [string]$BuilderRevision='r1', [string]$PackageRevision='r1')
+param([string]$Version='', [switch]$ForceBuild, [string]$BuilderRevision='r2', [string]$PackageRevision='r2')
 $ErrorActionPreference='Stop'
 $ProgressPreference='SilentlyContinue'
 $headers=@{'User-Agent'='CaprinePortableBuilder/1.0';'Accept'='application/vnd.github+json'}
