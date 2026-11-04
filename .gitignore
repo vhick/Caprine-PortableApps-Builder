@@ -1,0 +1,10 @@
+_upstream/
+work/
+dist/
+**/bin/
+**/obj/
+launcher/icon.ico
+*.log
+*.tmp
+__pycache__/
+.pytest_cache/
