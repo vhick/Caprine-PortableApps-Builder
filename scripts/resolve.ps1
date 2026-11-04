@@ -1,7 +1,8 @@
-param([string]$Version='', [switch]$ForceBuild, [string]$BuilderRevision='r3', [string]$PackageRevision='r3')
+param([string]$Version='', [switch]$ForceBuild, [string]$BuilderRevision='r4', [string]$PackageRevision='r4')
 $ErrorActionPreference='Stop'
 $ProgressPreference='SilentlyContinue'
 . (Join-Path $PSScriptRoot 'release-selection.ps1')
+. (Join-Path $PSScriptRoot 'release-existence.ps1')
 $headers=@{'User-Agent'='CaprinePortableBuilder/1.0';'Accept'='application/vnd.github+json';'X-GitHub-Api-Version'='2022-11-28'}
 if($env:GH_TOKEN) { $headers['Authorization']="Bearer $env:GH_TOKEN" }
 # DO NOT wrap the Invoke-RestMethod call in @(...): GitHub JSON arrays can be
@@ -12,8 +13,19 @@ $ver=[string]$selected.tag_name -replace '^v',''
 $tag="portable-v$ver-$BuilderRevision-$PackageRevision"
 $skip=$false
 if(-not $ForceBuild) {
-  $exists = & gh release view $tag --json tagName --jq '.tagName' 2>$null
-  if($LASTEXITCODE -eq 0 -and $exists -eq $tag) {$skip=$true}
+  # The previous gh release view check returned 1 for a perfectly normal missing
+  # release. GitHub Actions' pwsh wrapper picked up the leftover LASTEXITCODE and
+  # reported failure even though the resolver had successfully resolved Caprine.
+  # HTTP 404 means "not published yet"; auth, network and API errors must fail.
+  $repository=[string]$env:GITHUB_REPOSITORY
+  if($repository -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$') {
+    throw 'GITHUB_REPOSITORY is missing or invalid; refusing to inspect another repository'
+  }
+  $uri="https://api.github.com/repos/$repository/releases/tags/$([uri]::EscapeDataString($tag))"
+  $statusCode=0
+  $release=Invoke-RestMethod -Uri $uri -Headers $headers -Method Get -TimeoutSec 45 `
+      -SkipHttpErrorCheck -StatusCodeVariable statusCode -MaximumRetryCount 2 -RetryIntervalSec 2
+  $skip=Test-CaprinePublishedRelease -HttpStatus ([int]$statusCode) -Response $release -ExpectedTag $tag
 }
 $dest=Join-Path $PWD 'work'
 New-Item -ItemType Directory -Force -Path $dest|Out-Null

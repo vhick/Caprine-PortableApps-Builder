@@ -94,6 +94,6 @@ For full upstream license and dependency notices, see official upstream reposito
 "@|Set-Content -LiteralPath (Join-Path $stage 'Other/Source/UPSTREAM.txt') -Encoding utf8
 Copy-Item -LiteralPath (Join-Path $up 'license') -Destination (Join-Path $stage 'Other/Source/CAPRINE-LICENSE.txt')
 Copy-Item -LiteralPath (Join-Path $repo 'work/verified-integrations.json') -Destination (Join-Path $stage 'Other/Source/verified-integrations.json')
-[pscustomobject]@{tag=$Tag;version=$Version;source_commit=$commit;package_version=$pkgVersion;builder_revision='r3';built_utc=[DateTime]::UtcNow.ToString('o')}|
+[pscustomobject]@{tag=$Tag;version=$Version;source_commit=$commit;package_version=$pkgVersion;builder_revision='r4';built_utc=[DateTime]::UtcNow.ToString('o')}|
   ConvertTo-Json | Set-Content -LiteralPath (Join-Path $stage 'Other/Source/build-info.json') -Encoding utf8
 Write-Host "Staged $stage from commit $commit"

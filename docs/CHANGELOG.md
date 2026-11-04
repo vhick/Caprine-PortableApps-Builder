@@ -1,5 +1,15 @@
 # Caprine PortableApps Builder changes
 
+## r4 — Missing Release Exit-Code Fix
+
+- **Observed failure:** r3 passed eight static tests and the PowerShell release-selector regression, resolved stable Caprine v2.62.1 successfully, then exited with code 1 just after reporting `skip: False`.
+- **Root cause:** `gh release view` legitimately returned status 1 because the release did not yet exist. The script continued normally but did not reset `$LASTEXITCODE`; GitHub Actions' built-in `pwsh` step appends a final `exit $LASTEXITCODE` check and marked the step failed.
+- **Fix:** replace the native CLI existence probe with an authenticated REST API GET. HTTP 404 means release not yet published, HTTP 200 requires an exact matching tag, and HTTP 401/403/429/5xx rejects the operation. No external process exit code is left behind.
+- **Tests:** added offline PowerShell status-code regression and a source-kit static regression; main workflow executes PowerShell tests before expensive compilation.
+- **Revision:** main build now uses r4-r4 release tags; packaging-only defaults to r5, while preserving original source builder revision.
+- **Unchanged:** application patch, launcher/TraceGuard, shared packager v1.0.0, publisher v1.1.1, ZIP/installer validation.
+- **Not yet verified:** actual Windows Electron build, compiled NativeAOT launcher, interactive Messenger functionality, and installer generation/installation.
+
 ## r3 — GitHub Release Array Enumeration Fix
 
 - **Observed failure:** r2 passed 7/7 static tests and integration checks on Windows, then incorrectly reported no eligible stable GitHub release during source resolution.

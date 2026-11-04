@@ -8,6 +8,7 @@ class TestKit(unittest.TestCase):
         for name in ['.github/workflows/build-portable.yml','.github/workflows/repackage-only.yml',
                      'scripts/build.ps1','scripts/patch-upstream.ps1','scripts/resolve.ps1',
                      'scripts/release-selection.ps1','scripts/test-release-selection.ps1',
+                     'scripts/release-existence.ps1','scripts/test-release-existence.ps1',
                      'scripts/prepare-repackage.ps1','scripts/verify-integrations.ps1',
                      'scripts/validate-stage.ps1','scripts/verify-installer.ps1',
                      'scripts/package-zip.py','scripts/make-icons.py',
@@ -56,7 +57,22 @@ class TestKit(unittest.TestCase):
         self.assertIn('Write-Output', selector)
         self.assertIn('test-release-selection.ps1', runner)
         self.assertIn('v2.62.1', (ROOT/'scripts/test-release-selection.ps1').read_text(encoding='utf-8'))
-        self.assertIn("BuilderRevision='r3'", resolver)
+        self.assertIn("BuilderRevision='r4'", resolver)
+
+    def test_existing_release_check_does_not_leak_cli_exit_code(self):
+        resolver=(ROOT/'scripts/resolve.ps1').read_text(encoding='utf-8')
+        lookup=(ROOT/'scripts/release-existence.ps1').read_text(encoding='utf-8')
+        workflow=(ROOT/'.github/workflows/build-portable.yml').read_text(encoding='utf-8')
+        regression=(ROOT/'scripts/test-release-existence.ps1').read_text(encoding='utf-8')
+        self.assertNotRegex(resolver, r'(?m)^\s*(?:\$\w+\s*=\s*)?&\s*gh\s+release\s+view\b')
+        self.assertIn('-SkipHttpErrorCheck -StatusCodeVariable statusCode', resolver)
+        self.assertIn('Test-CaprinePublishedRelease', resolver)
+        for code in ('404','200'):
+            self.assertIn(code,lookup)
+        for code in ('401','403','429','500'):
+            self.assertIn(code,regression)
+        self.assertIn('test-release-existence.ps1',workflow)
+        self.assertIn('release-existence.ps1',resolver)
 
     def test_python_syntax(self):
         for file in (ROOT/'scripts').glob('*.py'):
