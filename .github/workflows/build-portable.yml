@@ -59,6 +59,9 @@ jobs:
         run: |
           & python -m unittest discover -s tests -v
           if ($LASTEXITCODE -ne 0) { throw 'Builder source-kit static tests failed' }
+      - name: Windows regression test for GitHub release enumeration
+        run: |
+          & ./scripts/test-release-selection.ps1
       - name: Validate experimental packager request
         env:
           ENGINE: ${{ inputs.engine }}
@@ -94,7 +97,7 @@ jobs:
       - name: Independently build and verify ready-to-extract ZIP
         if: steps.resolve.outputs.skip != 'true'
         run: |
-          & python ./scripts/package-zip.py --stage ./work/staging/CaprinePortable --out ./dist --revision r2
+          & python ./scripts/package-zip.py --stage ./work/staging/CaprinePortable --out ./dist --revision r3
           if ($LASTEXITCODE -ne 0) { throw 'Independent ZIP build failed' }
       - name: Shared Universal Portable Package Builder v1.0.0
         id: pkg
@@ -106,7 +109,7 @@ jobs:
           output-dir: dist
           engine: ${{ inputs.engine }}
           running-exe: App\Caprine\Caprine.exe
-          package-revision: r2
+          package-revision: r3
           timeout-seconds: '900'
           official-tool-url: ${{ inputs.official_tool_url }}
           official-tool-sha256: ${{ inputs.official_tool_sha256 }}
@@ -125,7 +128,7 @@ jobs:
             dist/*.zip
             dist/*.paf.exe
           tag: ${{ steps.resolve.outputs.release_tag }}
-          release-title: Caprine Portable ${{ steps.resolve.outputs.version }} (r2)
+          release-title: Caprine Portable ${{ steps.resolve.outputs.version }} (r3)
           keep-releases: '3'
           prune: 'false'
           dry-run: 'true'
@@ -137,7 +140,7 @@ jobs:
             dist/*.zip
             dist/*.paf.exe
           tag: ${{ steps.resolve.outputs.release_tag }}
-          release-title: Caprine Portable ${{ steps.resolve.outputs.version }} (r2)
+          release-title: Caprine Portable ${{ steps.resolve.outputs.version }} (r3)
           keep-releases: '3'
           prune: 'false'
           dry-run: 'false'

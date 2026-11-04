@@ -1,20 +1,14 @@
-param([string]$Version='', [switch]$ForceBuild, [string]$BuilderRevision='r2', [string]$PackageRevision='r2')
+param([string]$Version='', [switch]$ForceBuild, [string]$BuilderRevision='r3', [string]$PackageRevision='r3')
 $ErrorActionPreference='Stop'
 $ProgressPreference='SilentlyContinue'
-$headers=@{'User-Agent'='CaprinePortableBuilder/1.0';'Accept'='application/vnd.github+json'}
+. (Join-Path $PSScriptRoot 'release-selection.ps1')
+$headers=@{'User-Agent'='CaprinePortableBuilder/1.0';'Accept'='application/vnd.github+json';'X-GitHub-Api-Version'='2022-11-28'}
 if($env:GH_TOKEN) { $headers['Authorization']="Bearer $env:GH_TOKEN" }
-# Query genuine GitHub releases rather than assuming the latest commit is stable.
-$releases=@(Invoke-RestMethod -Uri 'https://api.github.com/repos/bankjaneo/caprine/releases?per_page=100' -Headers $headers)
-$stable=@($releases | Where-Object { -not $_.draft -and -not $_.prerelease -and $_.tag_name -match '^v?(\d+\.\d+\.\d+)$' } |
-    Sort-Object -Property @{Expression={[version]($_.tag_name -replace '^v','')}} -Descending)
-if($stable.Count -eq 0) { throw 'No eligible stable GitHub release. Refusing an unverified main-branch fallback.' }
-if($Version) {
-  if($Version -notmatch '^v?\d+\.\d+\.\d+$'){throw 'Version must be a stable semantic version X.Y.Z'}
-  $want=$Version -replace '^v',''
-  $selected=$stable | Where-Object {($_.tag_name -replace '^v','') -eq $want}|Select-Object -First 1
-  if(-not $selected){throw "The chosen version $Version is not a verified stable release in the latest 100 releases"}
-} else { $selected=$stable[0] }
-$ver=$selected.tag_name -replace '^v',''
+# DO NOT wrap the Invoke-RestMethod call in @(...): GitHub JSON arrays can be
+# emitted as one object. The helper explicitly enumerates and filters them.
+$rawReleases=Invoke-RestMethod -Uri 'https://api.github.com/repos/bankjaneo/caprine/releases?per_page=100' -Headers $headers -TimeoutSec 45 -MaximumRetryCount 2 -RetryIntervalSec 2
+$selected=Select-CaprineStableRelease -ApiResponse $rawReleases -RequestedVersion $Version
+$ver=[string]$selected.tag_name -replace '^v',''
 $tag="portable-v$ver-$BuilderRevision-$PackageRevision"
 $skip=$false
 if(-not $ForceBuild) {
@@ -23,7 +17,9 @@ if(-not $ForceBuild) {
 }
 $dest=Join-Path $PWD 'work'
 New-Item -ItemType Directory -Force -Path $dest|Out-Null
-[pscustomobject]@{tag=$selected.tag_name;version=$ver;commit=$selected.target_commitish;release_tag=$tag;skip=$skip;resolved_utc=[DateTime]::UtcNow.ToString('o')}|
+# target_commitish may be the branch name, not the release's actual commit.
+# The verified commit SHA is recorded in Other/Source/build-info.json after git clone.
+[pscustomobject]@{tag=$selected.tag_name;version=$ver;release_target_commitish=$selected.target_commitish;release_tag=$tag;skip=$skip;resolved_utc=[DateTime]::UtcNow.ToString('o')}|
   ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $dest 'resolved.json') -Encoding utf8
 if($env:GITHUB_OUTPUT){
   @("upstream_tag=$($selected.tag_name)","version=$ver","release_tag=$tag","skip=$($skip.ToString().ToLowerInvariant())") |

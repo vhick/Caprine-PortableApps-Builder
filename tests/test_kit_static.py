@@ -7,6 +7,7 @@ class TestKit(unittest.TestCase):
     def test_files(self):
         for name in ['.github/workflows/build-portable.yml','.github/workflows/repackage-only.yml',
                      'scripts/build.ps1','scripts/patch-upstream.ps1','scripts/resolve.ps1',
+                     'scripts/release-selection.ps1','scripts/test-release-selection.ps1',
                      'scripts/prepare-repackage.ps1','scripts/verify-integrations.ps1',
                      'scripts/validate-stage.ps1','scripts/verify-installer.ps1',
                      'scripts/package-zip.py','scripts/make-icons.py',
@@ -45,6 +46,17 @@ class TestKit(unittest.TestCase):
         helper=(ROOT/'scripts/prepare-repackage.ps1').read_text(encoding='utf-8')
         self.assertIn('${{ steps.prep.outputs.builder_revision }}', workflow)
         self.assertIn('builder_revision=$builderRevision', helper)
+
+    def test_resolver_no_direct_rest_array_wrapping(self):
+        resolver=(ROOT/'scripts/resolve.ps1').read_text(encoding='utf-8')
+        selector=(ROOT/'scripts/release-selection.ps1').read_text(encoding='utf-8')
+        runner=(ROOT/'.github/workflows/build-portable.yml').read_text(encoding='utf-8')
+        self.assertIn('$rawReleases=Invoke-RestMethod', resolver)
+        self.assertIn('Select-CaprineStableRelease -ApiResponse $rawReleases', resolver)
+        self.assertIn('Write-Output', selector)
+        self.assertIn('test-release-selection.ps1', runner)
+        self.assertIn('v2.62.1', (ROOT/'scripts/test-release-selection.ps1').read_text(encoding='utf-8'))
+        self.assertIn("BuilderRevision='r3'", resolver)
 
     def test_python_syntax(self):
         for file in (ROOT/'scripts').glob('*.py'):
