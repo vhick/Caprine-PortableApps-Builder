@@ -1,3 +1,13 @@
+## r5 — Electron 43 toast shell integration isolation (candidate; awaiting Windows build and manual testing)
+
+- Traced user-reported `AppData\Roaming\Microsoft\Windows\Start Menu\Programs` shortcut to Electron 43's `EnsureShortcut()` in native notification activator code, not shared NSIS packager. Also identified HKCU ToastActivator CLSID/LocalServer32 registrations.
+- Scoped portable identity to `Caprine Portable` and `com.sindresorhus.caprine.portable`, keeping Windows executable `Caprine.exe` via the supported electron-builder `executableName` option.
+- Added compiled `ShellTraceGuard.cs` with durable `shell-session.json`, exact-name Start Menu shortcut capture (including SHA-256 verification), pre-existing host shortcut protection, registry CLSID ownership filters, and interrupted-run recovery.
+- Added Windows native-executable `--shellguard-selftest` fixture for shortcut capture, a host-name conflict, registry cleanup, and crash recovery.
+- Kept v1.0.0 package builder and v1.1.1 publisher unchanged; did not duplicate installer logic.
+- Existing `Caprine.lnk` created under r4 is preserved intentionally; user must inspect target before manual cleanup.
+- Local static tests only; Windows compilation/interactive toast scenario **not yet verified**.
+
 # Caprine PortableApps Builder changes
 
 ## r4 — Missing Release Exit-Code Fix

@@ -26,6 +26,9 @@ $unpacked=Join-Path $up 'dist/win-unpacked'
 if(-not (Test-Path -LiteralPath (Join-Path $unpacked 'Caprine.exe'))){throw 'Caprine.exe missing in unpacked output'}
 & python -m pip install --disable-pip-version-check --quiet 'Pillow==11.3.0'
 if($LASTEXITCODE -ne 0){throw 'Pillow icon converter installation failed'}
+# Enforce an isolated packaged identity while retaining the original Caprine.exe executable name.
+$repacked=Get-Content -LiteralPath (Join-Path $up 'package.json') -Raw -Encoding utf8 | ConvertFrom-Json
+if($repacked.productName -ne 'Caprine Portable' -or $repacked.build.win.executableName -ne 'Caprine' -or $repacked.build.appId -ne 'com.sindresorhus.caprine.portable'){throw 'Portable identity source patch did not persist'}
 $icon=Join-Path $up 'build/icon.png'
 $stage=Join-Path $repo 'work/staging/CaprinePortable'
 $app=Join-Path $stage 'App/Caprine'
@@ -94,6 +97,6 @@ For full upstream license and dependency notices, see official upstream reposito
 "@|Set-Content -LiteralPath (Join-Path $stage 'Other/Source/UPSTREAM.txt') -Encoding utf8
 Copy-Item -LiteralPath (Join-Path $up 'license') -Destination (Join-Path $stage 'Other/Source/CAPRINE-LICENSE.txt')
 Copy-Item -LiteralPath (Join-Path $repo 'work/verified-integrations.json') -Destination (Join-Path $stage 'Other/Source/verified-integrations.json')
-[pscustomobject]@{tag=$Tag;version=$Version;source_commit=$commit;package_version=$pkgVersion;builder_revision='r4';built_utc=[DateTime]::UtcNow.ToString('o')}|
+[pscustomobject]@{tag=$Tag;version=$Version;source_commit=$commit;package_version=$pkgVersion;builder_revision='r5';built_utc=[DateTime]::UtcNow.ToString('o')}|
   ConvertTo-Json | Set-Content -LiteralPath (Join-Path $stage 'Other/Source/build-info.json') -Encoding utf8
 Write-Host "Staged $stage from commit $commit"

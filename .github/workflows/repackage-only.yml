@@ -8,7 +8,7 @@ on:
         type: string
         required: true
       package_revision:
-        description: 'New package revision; e.g. r5 for an r4-r4 source (must not conflict with existing release)'
+        description: 'New package revision; e.g. r5 for an r5-r5 source (must not conflict with existing release)'
         type: string
         required: true
         default: r5

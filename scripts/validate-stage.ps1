@@ -25,3 +25,9 @@ foreach($p in @('App','Other')){
 $testProcess=Start-Process -FilePath (Join-Path $Stage 'CaprinePortable.exe') -ArgumentList '--traceguard-selftest' -PassThru -Wait
 if($testProcess.ExitCode -ne 0){throw "Native launcher / empty-folder / crash-recovery test failed (exit $($testProcess.ExitCode))"}
 Write-Host 'PASS: native launcher executed; TraceGuard file, empty-dir, nested-empty-dir, host-protection, repeat and crash fixtures.'
+
+# Electron 43 toast activator creates AppUserModelId shortcuts/CLSID entries on Windows.
+# Execute the C# shell regression in a temporary namespace, never touching real app entries.
+$shellTest=Start-Process -FilePath (Join-Path $Stage 'CaprinePortable.exe') -ArgumentList '--shellguard-selftest' -PassThru -Wait
+if($shellTest.ExitCode -ne 0){throw "Native shell integration / shortcut / registry / crash fixture failed (exit $($shellTest.ExitCode))"}
+Write-Host 'PASS: portable shell integration (shortcut capture, CLSID cleanup, host protection, crash recovery).'

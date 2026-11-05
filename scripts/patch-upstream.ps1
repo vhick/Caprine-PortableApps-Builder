@@ -34,6 +34,30 @@ foreach($p in @($index,$config)) {
  if($content -match "import './portable-paths';") {throw 'Already patched upstream source; do not double-patch'}
  [IO.File]::WriteAllText($p, "import './portable-paths';`n"+$content)
 }
+# Give the portable edition its own application/notification identity. Electron 43
+# creates a Start Menu link and HKCU toast activator as soon as it registers
+# interactive notifications; reusing the installed app identity could overwrite
+# a conventional Caprine shortcut and CLSID registration.
+$pkgFile=Join-Path $source 'package.json'
+$pkg=Get-Content -LiteralPath $pkgFile -Raw -Encoding utf8 | ConvertFrom-Json
+if($pkg.productName -ne 'Caprine' -or $pkg.build.appId -ne 'com.sindresorhus.caprine') {
+    throw 'Unexpected Electron product identity: manual audit required before patching'
+}
+if($pkg.build.win.PSObject.Properties['executableName']) {
+    throw 'Unexpected pre-existing executableName: review source before patching'
+}
+$pkg.productName='Caprine Portable'
+$pkg.build.appId='com.sindresorhus.caprine.portable'
+$pkg.build.win | Add-Member -NotePropertyName executableName -NotePropertyValue 'Caprine'
+$pkg | ConvertTo-Json -Depth 100 | Set-Content -LiteralPath $pkgFile -Encoding utf8
+
+$content=[IO.File]::ReadAllText($index)
+$old="app.setAppUserModelId('com.sindresorhus.caprine');"
+$new="app.setAppUserModelId(process.env.CAPRINE_PORTABLE_DATA ? 'com.sindresorhus.caprine.portable' : 'com.sindresorhus.caprine');"
+if(-not $content.Contains($old)){throw 'Upstream AUMID initialization changed; review before packaging'}
+$content=$content.Replace($old,$new)
+[IO.File]::WriteAllText($index,$content)
+
 $content=[IO.File]::ReadAllText($index)
 $old="if (!is.development && config.get('autoUpdate')) {"
 $new="if (!process.env.CAPRINE_PORTABLE_DATA && !is.development && config.get('autoUpdate')) {"
@@ -45,4 +69,4 @@ $old="label: 'Automatic Updates',"
 if(-not $content.Contains($old)){throw 'Auto-updater menu changed upstream; manual review required'}
 $content=$content.Replace($old,"label: 'Automatic Updates',`n            visible: !process.env.CAPRINE_PORTABLE_DATA,")
 [IO.File]::WriteAllText($menu,$content)
-Write-Host 'Portable Electron profile, session storage, logs, and update guard applied.'
+Write-Host 'Portable Electron profile, session data, independent notification identity, and update guard applied.'

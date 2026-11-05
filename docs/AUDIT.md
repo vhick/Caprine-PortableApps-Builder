@@ -48,3 +48,15 @@ Sources:
 Static/source inspection and contract verification are evidence of intended behavior, not proof that a compiled Windows app works. Before user acceptance, verify Windows Actions logs: upstream TypeScript build; Electron `--dir` output; NativeAOT launcher test; TraceGuard fixture; ZIP test; NSIS install/upgrade fixture; publisher dry-run and actual release. Manually test the Messenger UI on a desktop; API changes outside this repository may affect behavior.
 
 A `.paf.exe` built with `custom-nsis` is **an independently generated NSIS installer** named for PortableApps-style packaging. It is not the official PortableApps.com Installer and has not been submitted for certification. The pinned shared packager's current NSIS script protects `Data`, but it intentionally replaces `App` and `Other`. Avoid personal files in managed binary folders; older profiles may not support rollback without backup.
+
+## r5 supplemental evidence: Electron 43 Windows notification registration
+
+Exact source: https://raw.githubusercontent.com/electron/electron/v43.8.6/shell/browser/notifications/win/windows_toast_activator.cc
+
+- `EnsureShortcut()` calls `SHGetKnownFolderPath(FOLDERID_Programs)` and saves a shortcut at `<Programs>\<GetApplicationName()>.lnk`. In r4, `GetApplicationName()` is `Caprine`; r5 changes the **packaged application productName** to `Caprine Portable` while preserving executableName `Caprine`.
+- `EnsureCLSIDRegistry()` registers `HKCU\Software\Classes\CLSID\{ToastActivatorCLSID}` with `LocalServer32` set to the running app executable.
+- `NotificationActivator::RegisterActivator()` invokes these helpers asynchronously on a blocking task pool when running unpackaged Windows Electron.
+- Consequently, when a notification is shown, a Windows shell shortcut and a current-user registry entry can appear even though the independent NSIS packager never creates shortcuts.
+- A source-only `app.setAppUserModelId()` change **does not prevent** this Electron behavior; the compiled launcher must safely remove narrowly owned traces after the process exits.
+- r5's managed `ShellTraceGuard` snapshots exact targets before launch, protects pre-existing entries, safely backs up newly created `.lnk` files in Data, and only deletes newly registered exact-match Electron COM activator keys. The Windows notification runtime acceptance test remains outstanding.
+

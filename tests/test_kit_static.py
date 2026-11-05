@@ -12,7 +12,7 @@ class TestKit(unittest.TestCase):
                      'scripts/prepare-repackage.ps1','scripts/verify-integrations.ps1',
                      'scripts/validate-stage.ps1','scripts/verify-installer.ps1',
                      'scripts/package-zip.py','scripts/make-icons.py',
-                     'launcher/Program.cs','launcher/CaprinePortable.csproj','README.md','LICENSE']:
+                     'launcher/Program.cs','launcher/ShellTraceGuard.cs','launcher/CaprinePortable.csproj','README.md','LICENSE']:
             self.assertTrue((ROOT/name).is_file(),name)
     def test_shared_pins(self):
         for filename in ['build-portable.yml','repackage-only.yml']:
@@ -57,7 +57,7 @@ class TestKit(unittest.TestCase):
         self.assertIn('Write-Output', selector)
         self.assertIn('test-release-selection.ps1', runner)
         self.assertIn('v2.62.1', (ROOT/'scripts/test-release-selection.ps1').read_text(encoding='utf-8'))
-        self.assertIn("BuilderRevision='r4'", resolver)
+        self.assertIn("BuilderRevision='r5'", resolver)
 
     def test_existing_release_check_does_not_leak_cli_exit_code(self):
         resolver=(ROOT/'scripts/resolve.ps1').read_text(encoding='utf-8')
@@ -73,6 +73,26 @@ class TestKit(unittest.TestCase):
             self.assertIn(code,regression)
         self.assertIn('test-release-existence.ps1',workflow)
         self.assertIn('release-existence.ps1',resolver)
+
+    def test_electron43_shell_integration_fix(self):
+        patch=(ROOT/'scripts/patch-upstream.ps1').read_text(encoding='utf-8')
+        guard=(ROOT/'launcher/ShellTraceGuard.cs').read_text(encoding='utf-8')
+        build=(ROOT/'scripts/build.ps1').read_text(encoding='utf-8')
+        stage=(ROOT/'scripts/validate-stage.ps1').read_text(encoding='utf-8')
+        launcher=(ROOT/'launcher/Program.cs').read_text(encoding='utf-8')
+        self.assertIn("$pkg.productName='Caprine Portable'",patch)
+        self.assertIn("$pkg.build.appId='com.sindresorhus.caprine.portable'",patch)
+        self.assertIn("-NotePropertyName executableName -NotePropertyValue 'Caprine'",patch)
+        self.assertIn("app.setAppUserModelId(process.env.CAPRINE_PORTABLE_DATA",patch)
+        self.assertIn("if($repacked.productName -ne 'Caprine Portable'",build)
+        for required in ('Caprine Portable.lnk','ShortcutAbsentAtStart','shell-session.json',
+                         'ExistingClsidKeys','MatchingRegistryKeys','Recovered',
+                         'Electron Notification Activator','LocalServer32','SelfTest()',
+                         'NoReparsePoint','SameFile'):
+            self.assertIn(required,guard)
+        self.assertIn('--shellguard-selftest',stage)
+        self.assertIn('shellGuard.Begin()',launcher)
+        self.assertIn('shellGuard.End()',launcher)
 
     def test_python_syntax(self):
         for file in (ROOT/'scripts').glob('*.py'):

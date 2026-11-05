@@ -297,6 +297,11 @@ internal static class Program
     {
         try
         {
+            if (args.Length == 1 && args[0] == "--shellguard-selftest")
+            {
+                ShellTraceGuard.SelfTest();
+                return 0;
+            }
             if (args.Length == 1 && args[0] == "--traceguard-selftest")
             {
                 TraceGuard.SelfTest();
@@ -324,27 +329,40 @@ internal static class Program
                 ];
                 var guard = new TraceGuard(data, paths);
                 guard.Begin();
-                var start = new ProcessStartInfo(exe)
+                var shellGuard = new ShellTraceGuard(data, exe);
+                bool shellStarted = false;
+                try
                 {
-                    UseShellExecute = false,
-                    WorkingDirectory = Path.GetDirectoryName(exe)!
-                };
-                start.Environment["CAPRINE_PORTABLE_DATA"] = profile;
-                foreach (string argument in args) start.ArgumentList.Add(argument);
-                using var process = Process.Start(start) ?? throw new InvalidOperationException("Unable to start Caprine.");
-                // Closing the GUI can hide Caprine to tray. Wait for actual process exit.
-                // A grace window handles Electron's app.relaunch() behavior.
-                process.WaitForExit();
-                DateTime? quietSince = null;
-                while (true)
-                {
-                    if (IsAppRunning(exe)) quietSince = null;
-                    else quietSince ??= DateTime.UtcNow;
-                    if (quietSince is not null && (DateTime.UtcNow - quietSince.Value).TotalSeconds >= 4) break;
-                    Thread.Sleep(350);
+                    shellGuard.Begin();
+                    shellStarted = true;
+                    var start = new ProcessStartInfo(exe)
+                    {
+                        UseShellExecute = false,
+                        WorkingDirectory = Path.GetDirectoryName(exe)!
+                    };
+                    start.Environment["CAPRINE_PORTABLE_DATA"] = profile;
+                    foreach (string argument in args) start.ArgumentList.Add(argument);
+                    using var process = Process.Start(start) ?? throw new InvalidOperationException("Unable to start Caprine.");
+                    // Closing the GUI can hide Caprine to tray. Wait for actual process exit.
+                    // A grace window handles Electron's app.relaunch() behavior.
+                    process.WaitForExit();
+                    DateTime? quietSince = null;
+                    while (true)
+                    {
+                        if (IsAppRunning(exe)) quietSince = null;
+                        else quietSince ??= DateTime.UtcNow;
+                        if (quietSince is not null && (DateTime.UtcNow - quietSince.Value).TotalSeconds >= 4) break;
+                        Thread.Sleep(350);
+                    }
+                    return 0;
                 }
-                guard.End();
-                return 0;
+                finally
+                {
+                    // Must run after the Electron process and its notification worker exit.
+                    // If interrupted, each active journal is replayed on the next launch.
+                    try { if (shellStarted) shellGuard.End(); }
+                    finally { guard.End(); }
+                }
             }
             finally { mutex.ReleaseMutex(); }
         }
@@ -358,7 +376,7 @@ internal static class Program
             }
             catch { }
             // CI test mode must never show a modal GUI on an unattended runner.
-            if (!(args.Length == 1 && args[0] == "--traceguard-selftest"))
+            if (!(args.Length == 1 && (args[0] == "--traceguard-selftest" || args[0] == "--shellguard-selftest")))
                 Alert(e.Message + "\n\nSee Data\\TraceGuard\\launcher-errors.log for details.");
             return 1;
         }

@@ -1,4 +1,4 @@
-param([string]$Version='', [switch]$ForceBuild, [string]$BuilderRevision='r4', [string]$PackageRevision='r4')
+param([string]$Version='', [switch]$ForceBuild, [string]$BuilderRevision='r5', [string]$PackageRevision='r5')
 $ErrorActionPreference='Stop'
 $ProgressPreference='SilentlyContinue'
 . (Join-Path $PSScriptRoot 'release-selection.ps1')
