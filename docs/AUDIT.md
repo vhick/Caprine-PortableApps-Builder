@@ -1,62 +1,44 @@
-# Caprine storage / build audit and evidence ledger (2026-11-04)
+# Caprine v2.62.1 upstream source audit — PORTABLEAPPS
 
-## Evidence from selected fork
+Audit date: 2026-11-07. Evidence: publicly readable exact-tag source (links below). Latest non-prerelease version observed v2.62.1; GitHub release short commit `5403168`. Exact 40-character source SHA and npm lockfile digest are resolved by `scripts/resolve.py` during each build. No Windows runtime trace capture was performed in this analysis environment.
 
-| Evidence | Observation | Builder action |
-| --- | --- | --- |
-| `package.json` (bankjaneo/caprine, `facebook-migrate` branch) | TypeScript build via `tsc`, npm lockfile, Electron 43 Windows runtime, `electron-builder` packaging, MIT license, Node >=22.12, Windows x64 targets | `npm ci` on Node24; `npm run build`; `electron-builder --win --x64 --dir --publish never`; verify version tag and MIT before packaging |
-| `source/config.ts` | `const store = new Store<StoreType>({schema})` and many preferences; Electron Store by default uses app `userData` | Add early `portable-paths.ts` before config-store module initializes |
-| `source/index.ts` | `autoUpdater.checkForUpdatesAndNotify()` when saved `autoUpdate` true and production; `app.requestSingleInstanceLock()`; app-on-ready; `app.getPath('userData')` custom.css | Early profile redirect + disable update condition under `CAPRINE_PORTABLE_DATA`; guard concurrent portable launcher |
-| `source/index.ts` | `app.getPath('downloads')` for saved blobs, native notifications, app quit/relaunch and tray behavior | Do not capture user downloads; wait for all same-binary Caprine processes to exit after a tray Quit |
-| `source/menu.ts` | “Automatic Updates” toggle menu item and `app.relaunch()` menu actions | Hide update toggle for portable execution; gracefully wait out relaunch transition |
-| `source/tray.ts` | User can hide window and keep the application alive | Wait until all Caprine.exe processes from this precise packaged binary have exited |
-| `build/icon.png` | Authentic Caprine Windows package icon source referenced by electron-builder | Pillow generates `.ico` and 16/32/75/128 PNG variants, and same ICO embedded in AOT launcher |
-| `build/after-pack.js` | Only macOS code-signing activity; returns on Windows | No macOS-specific changes required |
-| `package.json` Windows `win.target` | Default upstream creates conventional NSIS installers, not unpacked release | Override via `--dir`; let shared Portable Package Builder make the PortableApps-style installer |
-| `license` (repo) / `package.json` | MIT app license, author listing credits Sindre Sorhus and maintained fork bankjaneo | Preserve upstream license in independent portable package, document attribution |
+## Framework and build
 
-Sources:
-- https://github.com/bankjaneo/caprine
-- https://raw.githubusercontent.com/bankjaneo/caprine/facebook-migrate/package.json
-- https://raw.githubusercontent.com/bankjaneo/caprine/facebook-migrate/source/index.ts
-- https://raw.githubusercontent.com/bankjaneo/caprine/facebook-migrate/source/config.ts
-- https://raw.githubusercontent.com/bankjaneo/caprine/facebook-migrate/source/menu.ts
-- https://raw.githubusercontent.com/bankjaneo/caprine/facebook-migrate/source/tray.ts
-- https://raw.githubusercontent.com/vhick/Portable-Package-Builder/v1.0.0/action.yml
-- https://raw.githubusercontent.com/vhick/Portable-Package-Builder/v1.0.0/scripts/common.ps1
-- https://raw.githubusercontent.com/vhick/Portable-Package-Builder/v1.0.0/nsis/community-installer.nsi
-- https://raw.githubusercontent.com/vhick/portable-release-publisher/v1.1.1/action.yml
-- https://raw.githubusercontent.com/vhick/portable-release-publisher/v1.1.1/scripts/publish.py
+- Source: TypeScript Electron app, npm with `package-lock.json`, Node >=22.12, `npm ci`, `npm run build` (`tsc`), `electron-builder --win --x64 --dir --publish never` for unpacked Windows files.
+- Exact-tag `package.json`: Electron `43.8.6`, electron-builder `^26.18.0` and MIT license; upstream version `2.62.1` at the time of the audit. `build/icon.png` is bundled upstream artwork.
+- `source/index.ts`: loads config at import time, calls `app.setAppUserModelId('com.sindresorhus.caprine')`, checks `electron-updater`, creates notifications with reply/click callbacks, manages tray and exit, saves chosen downloads in Windows Downloads.
+- `source/config.ts`: `const store = new Store<StoreType>({schema})` at module initialization, so `app.setPath('userData')` must happen **before importing Caprine's index module**.
+- `source/menu.ts`: original `Launch at Login` invokes `app.setLoginItemSettings` and `Automatic Updates` toggles `config.autoUpdate`; portable adapter hides both.
+- Installer-only shell traces are managed by pinned shared Package Builder and must be tested separately from runtime notification traces.
 
-## Scoped storage findings (Windows)
+## Mode-specific findings table
 
-| Path/key | Ownership / confidence | Handling | Residual limitation |
-| --- | --- | --- | --- |
-| `%APPDATA%\Caprine` | Electron's default app `userData` on Windows; high confidence | Redirect `userData`; monitor only this narrowly named fallback if it did not exist before launch | Existing host-installed Caprine folder left untouched; cannot attribute new files inside it |
-| `%LOCALAPPDATA%\Caprine` | Possible app-specific storage (conservative fallback, not confirmed created by this source) | Monitor if absent at session start; copy whole new app-only tree including empty dirs | Existing host path protected; no claim all new host directories are discovered |
-| `%APPDATA%\Caprine\config.json` | Conventional electron-store default file under userData | Redirect via `app.setPath('userData')` before store import; actual config path depends on version and app name | Unexpected future upstream storage change causes portability validation review |
-| `<PortableRoot>\Data\Profile` | Dedicated portable profile (source-level patch) | Electron userData, sessionData, logs, Chromium user-data-dir, login state and cached content | Credentials/cookies may be tied to OS account / Windows encryption |
-| `<PortableRoot>\Data\TraceGuard` | Dedicated managed journal | Manifest, recovered folders, conflicts, errors and selftest logs | Locks and crashes may leave host data until next safe recovery |
-| User's Downloads folder | Explicit application content requested by user | Never silently capture or delete | Downloads intentionally outside Data |
-| Windows Registry `HKCU`/`HKLM` | No Caprine-specific keys confirmed from reviewed entry/config/build source | None modified by launcher; no system-wide cleanup | Windows/Electron notifications, associations, recent-use records may persist |
-| `%PROGRAMDATA%`, `%TEMP%`, Windows notifications database | Shared system locations | No wholesale relocation/deletion | Not truly zero-trace, and unrecognized paths require a later evidence-led scope review |
-| Auto-update downloads | `electron-updater` on conventional Windows build | Disabled for portable execution at source level | Do not use conventional upstream updater within portable package |
-| Services, drivers, scheduled tasks | No Caprine-owned service/driver/task found in reviewed application source | None created | OS integration and Chromium subprocesses still exist during runtime |
+| Finding | Source evidence | Path/registration | Owner | NATIVE remedy | PORTABLEAPPS remedy | Data safety | Functionality tradeoff | Test | Label |
+|---|---|---|---|---|---|---|---|---|---|
+| electron-store initializes during module imports | `source/index.ts` imports `source/config.ts` | default `userData` (normally AppData) | Caprine/Electron | Not selected | early bootstrap sets `Data/Profile` before `require(index)` | isolated from installed profile | none intended | persistent settings after restart | SOURCE-INSPECTED |
+| Chromium cookies/sessions/cache | Electron session runtime | `app.getPath('sessionData')` | Electron | Not selected | early `Data/Session` | no host profile harvest | possible Windows encryption portability limits | login/restart/drive move | SOURCE-INSPECTED; runtime NOT YET VERIFIED |
+| Logs and crash reports | Electron app APIs | logs, crashDumps | Electron | Not selected | `Data/Logs`, `Data/CrashDumps` | no shared logs cleaned | none known | crash/restart/profile scan | STATIC-VALIDATED design |
+| Updater checks and downloads | `source/index.ts` updater conditional | Electron update caches / install destination | Caprine/electron-updater | Not selected | bypass updater while portable; hide update menu | prevents unexpected binary overwrite | manual portable upgrade required | wait/updater menu | SOURCE-INSPECTED |
+| Launch at Login entry | `source/menu.ts` | Windows per-user login integration | Caprine/Electron | Not selected | hide portable menu item, do not register | prevents unintended startup entry | automatic startup not provided | check HKCU Run/login settings | SOURCE-INSPECTED |
+| AppUserModelId uses installed identity | `source/index.ts` | Windows shell AUMID | Caprine/Electron | Not selected | distinct `com.vhick.caprine.portable` and fixed toast GUID | avoids known name collision | manual toast click test | installed coexistence | SOURCE-INSPECTED; behavior NOT YET VERIFIED |
+| Toast notifications may create Start Menu `.lnk` and CLSID | `source/index.ts` creates Electron Notification; Electron 43 behavior, prior runtime issue | `%APPDATA%/Microsoft/Windows/Start Menu/Programs/<Caprine*.lnk>`, HKCU Classes CLSID | Electron/Windows | Not selected | bounded exact-target ShellGuard, backups before removal, keep notifications | never remove preexisting matching name | may preserve unverified shell records | live toast + click + cleanup | SOURCE-INSPECTED + inferred shell path; NOT YET VERIFIED |
+| Downloads intentionally written to Downloads | `source/index.ts` `app.getPath('downloads')` | user Downloads | Caprine/user action | Not selected | retain standard user-directed save location | never move/delete user downloads | saved files are not bundled in Data | download test | SOURCE-INSPECTED |
+| Tray and relaunch | `source/index.ts`, `source/util.ts` | child processes and application single-instance state | Caprine/Electron | Not selected | root launcher waits on Windows job child set when assignable | skip shell cleanup when not verifiably shut down | launcher stays open while tray active | quit/close/relaunch/crash | SOURCE-INSPECTED + proposed behavior; NOT YET VERIFIED |
+| OS credential encryption and Windows managed notification caches | Chromium/Windows | OS-protected keys/history | Windows | Not selected | do not manipulate Windows security or broad shell caches | protects operating system | machine/account move may require login | multi-account portability | DOCUMENTED LIMITATION |
 
-## Assurance boundary
+**Scope:** No native-portable product was requested. The NATIVE column is deliberately “Not selected.” There is no native post-exit recovery mechanism anywhere in this kit.
 
-Static/source inspection and contract verification are evidence of intended behavior, not proof that a compiled Windows app works. Before user acceptance, verify Windows Actions logs: upstream TypeScript build; Electron `--dir` output; NativeAOT launcher test; TraceGuard fixture; ZIP test; NSIS install/upgrade fixture; publisher dry-run and actual release. Manually test the Messenger UI on a desktop; API changes outside this repository may affect behavior.
+## Source evidence links
 
-A `.paf.exe` built with `custom-nsis` is **an independently generated NSIS installer** named for PortableApps-style packaging. It is not the official PortableApps.com Installer and has not been submitted for certification. The pinned shared packager's current NSIS script protects `Data`, but it intentionally replaces `App` and `Other`. Avoid personal files in managed binary folders; older profiles may not support rollback without backup.
+- https://github.com/bankjaneo/caprine/releases/tag/v2.62.1
+- https://raw.githubusercontent.com/bankjaneo/caprine/v2.62.1/package.json
+- https://raw.githubusercontent.com/bankjaneo/caprine/v2.62.1/source/index.ts
+- https://raw.githubusercontent.com/bankjaneo/caprine/v2.62.1/source/config.ts
+- https://raw.githubusercontent.com/bankjaneo/caprine/v2.62.1/source/menu.ts
+- https://raw.githubusercontent.com/bankjaneo/caprine/v2.62.1/source/util.ts
+- https://raw.githubusercontent.com/bankjaneo/caprine/v2.62.1/license
+- https://www.electronjs.org/docs/latest/api/app
+- https://github.com/vhick/Portable-Package-Builder/blob/v1.0.0/action.yml
+- https://github.com/vhick/portable-release-publisher/blob/v1.1.1/action.yml
 
-## r5 supplemental evidence: Electron 43 Windows notification registration
-
-Exact source: https://raw.githubusercontent.com/electron/electron/v43.8.6/shell/browser/notifications/win/windows_toast_activator.cc
-
-- `EnsureShortcut()` calls `SHGetKnownFolderPath(FOLDERID_Programs)` and saves a shortcut at `<Programs>\<GetApplicationName()>.lnk`. In r4, `GetApplicationName()` is `Caprine`; r5 changes the **packaged application productName** to `Caprine Portable` while preserving executableName `Caprine`.
-- `EnsureCLSIDRegistry()` registers `HKCU\Software\Classes\CLSID\{ToastActivatorCLSID}` with `LocalServer32` set to the running app executable.
-- `NotificationActivator::RegisterActivator()` invokes these helpers asynchronously on a blocking task pool when running unpackaged Windows Electron.
-- Consequently, when a notification is shown, a Windows shell shortcut and a current-user registry entry can appear even though the independent NSIS packager never creates shortcuts.
-- A source-only `app.setAppUserModelId()` change **does not prevent** this Electron behavior; the compiled launcher must safely remove narrowly owned traces after the process exits.
-- r5's managed `ShellTraceGuard` snapshots exact targets before launch, protects pre-existing entries, safely backs up newly created `.lnk` files in Data, and only deletes newly registered exact-match Electron COM activator keys. The Windows notification runtime acceptance test remains outstanding.
-
+Do not reuse v2.62.1 source assumptions after material upstream changes. `patch_caprine.py` fails if exact source anchors change.

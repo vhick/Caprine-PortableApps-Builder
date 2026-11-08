@@ -1,0 +1,13 @@
+Caprine upstream: https://github.com/bankjaneo/caprine
+Original authors: Sindre Sorhus and contributors; bankjaneo fork.
+License: MIT (see https://github.com/bankjaneo/caprine/blob/v2.62.1/license).
+GitHub Actions CI retrieves the real upstream license and copies it into the runtime package at Other/Source/UPSTREAM_LICENSE.txt.
+
+Electron: https://www.electronjs.org/ MIT; additional Chromium third-party notices are included by its packaging tools.
+PortableApps.com format and name: community-format compatibility only; not an official PortableApps.com certified release.
+
+Shared action credits:
+https://github.com/vhick/Portable-Package-Builder (v1.0.0)
+https://github.com/vhick/portable-release-publisher (v1.1.1)
+
+The Caprine PortableApps builder is an independently packaged derivative. It is not endorsed by Caprine, PortableApps.com or GitHub.

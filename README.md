@@ -1,159 +1,53 @@
-# Caprine PortableApps Builder — r5 (Electron toast shortcut recovery)
+# Caprine PortableApps Builder — standalone r1
 
-**Purpose:** Build the real [bankjaneo/caprine](https://github.com/bankjaneo/caprine) stable source as a Windows x64 Electron application, compile a genuine native Windows `CaprinePortable.exe` launcher with source-based Electron profile redirection and app-specific TraceGuard, stage a PortableApps menu-compatible folder, independently make a tested ZIP, and delegate installer creation/publishing to the two existing shared actions.
+**Mode:** PORTABLEAPPS ONLY. The application is an on-demand Windows Electron client; a genuine PortableApps directory, a compiled root launcher, and a separate PortableApps-style installer are appropriate. This is **not** a native portable build and **not** official PortableApps.com certification.
 
-**r5 changes (not Windows-user-verified):** Builds on the successfully compiled r4 base. Source-level portable-only product identity becomes `Caprine Portable`, with a separate Windows AppUserModelID and explicit `win.executableName=Caprine` to preserve the proven portable executable layout. Electron 43.8.6 creates a per-user `Caprine Portable.lnk` Start Menu shortcut and `HKCU\Software\Classes\CLSID\{GUID}` notification COM activator during notification registration. The compiled launcher now journals absence/presence of the exact portable-specific shortcut and the exact executable-associated CLSID keys before launch, captures any newly created shortcut under `Data\TraceGuard\Recovered\StartMenu`, removes only owned/unmodified-format Electron activator keys, and repeats cleanup after a crash on next launch. A pre-existing shortcut of that name blocks startup rather than being overwritten; existing registry CLSIDs are protected. Synthetic Windows-side fixtures exercise shortcut recovery, no overwrite, matching registry cleanup, and interrupted-exit recovery. The r4 shortcut named `Caprine.lnk` and its existing registry records are **not** deleted by r5; inspect manually before removing them. Windows notifications may temporarily use the new shortcut while Caprine is running. The shared actions remain pinned and untouched.
+**What this ZIP contains:** complete standalone builder source, executable GitHub Actions workflow, upstream release resolver, fail-closed source adapter, C# compiled launcher source, minimal native Windows ShellGuard implementation, staging/validation scripts, independent ZIP assembly, shared installer/publisher integration, controlled offline tests, documentation and attribution. It does **not** contain prebuilt Caprine binaries; CI builds from exact verified upstream tagged source after you push the kit.
 
-**r4 changes:** Fixed the observed r3 false failure after correct stable-release resolution. `gh release view` returned exit code 1 when the new portable release was not yet published; GitHub Actions' PowerShell runner propagated that stale code and terminated the step. Release existence is now checked through the authenticated GitHub REST API, accepting HTTP 404 as "not published" while rejecting other API failures. Added an offline Windows regression test and a source-kit regression. Source, native launcher, TraceGuard, shared action pins, and installer handling are unchanged.
+**Upstream:** https://github.com/bankjaneo/caprine  
+**Stable release observed during audit (2026-11-07):** v2.62.1, release commit begins `5403168`; Electron 43.8.6, TypeScript, electron-builder 26, MIT. The workflow resolves and checks the actual latest stable release on each dispatch, so do not hard-code the observed version. 
 
-**r3 changes:** Fixed release selection after GitHub Actions reported “No eligible stable GitHub release” despite upstream stable releases existing. PowerShell's `Invoke-RestMethod` does not automatically enumerate JSON arrays in pipelines, so `@(...)` around the REST command caused the release filter to see an array rather than individual releases. r3 explicitly enumerates the response and separately filters published non-prerelease semantic-version tags. A dedicated Windows PowerShell regression test runs before costly compilation. Also clarifies that `target_commitish` is not a verified commit SHA; actual SHA is captured after cloning.
+## Fast start: GitHub Desktop (no compiler on your PC)
 
-**r2 changes:** Explicit UTF-8 decoding in all source-kit tests fixes the Windows `cp1252` decoding failure; packaging-only workflow now uses the builder revision from the trusted source release rather than hardcoding r1. Neither change alters the portable launcher or Data-protection implementation.
+1. On GitHub.com create an **empty new repository** such as `Caprine-PortableApps-Builder`, **not** a fork of Caprine. Choose Public or Private. Do not enable README, license or .gitignore while creating the repo.
+2. Open GitHub Desktop → File → Clone Repository → URL, paste your new repository address and clone it to your preferred local folder.
+3. Extract the **contents** of this builder kit ZIP directly into the cloned repository's root. The root must contain `.github/workflows/build-portableapps.yml`, `scripts/`, `launcher/` and `README.md`. Ensure Windows Explorer shows the `.github` folder; do not nest the kit folder one level deeper.
+4. In GitHub Desktop check the changed files. Enter a summary such as `Add standalone Caprine PortableApps builder`, click **Commit to main**, then **Push origin**.
+5. On GitHub.com open the builder repository → **Actions** → **Build and Release Caprine PortableApps** → **Run workflow**. Keep `upstream_version=latest`, `builder_revision=r1`. Manual dispatch only; there is no scheduled CI.
+6. Inspect the job logs: **Resolve stable upstream**, **Apply source adapter**, **Build actual upstream**, **Build C# launcher**, **Validate ZIP**, **Generate installer**, **Publisher dry run**, **Publish**. Never infer runtime portability from green CI alone.
+7. Under your builder repo's **Releases**, download the `CaprinePortable-...zip` and/or `CaprinePortable-vhick_...custom-nsis-r1.paf.exe`, plus `SHA256SUMS.txt`. Verify hashes before use. The shared publisher creates the checksums.
+8. ZIP method: extract the whole `CaprinePortable` folder anywhere you can write, then double-click `CaprinePortable.exe`. Installer method: run `.paf.exe`, select a portable destination; this is a community PortableApps-style installer, not the official one. Refresh the PortableApps Menu if needed.
+9. Close Caprine via its **Quit/Exit** menu and confirm the tray process exits before changing binaries. Back up `CaprinePortable/Data` before each upgrade.
+10. Upgrade by replacing `App/` and the root launcher/metadata from a new ZIP while **retaining your existing Data directory**. For rollback, restore an earlier known-good application binary set and compatible Data backup. Do not copy an old ZIP's empty Data over your real profile.
 
-**Status:** User confirmed **r4** builds successfully through GitHub Actions but observed a Start Menu shortcut at runtime. r5 is the proposed application-level remediation and has only passed local source-kit tests. It has **not** been compiled or run on a Windows machine yet. Do not mark r5 as a verified working baseline until a Windows Actions run and a real on-device notification/quit test pass. Keep r4 available for rollback with a backup of `Data`.
+## Supported build behavior
 
-## Pinned dependencies (do not silently upgrade)
+- Source mode: exact upstream stable GitHub release tag, verified by `git ls-remote`, detached checkout of commit SHA, matching `package.json` version. `package-lock.json` hash included in build identity. `npm ci` honors upstream locked dependency versions and registry-integrity checks.
+- App source changes: `portable-bootstrap.cjs` executes before Caprine imports `electron-store`; it sets Electron `userData`, `sessionData`, `logs` and `crashDumps` under root `Data/`. It does not change shared APPDATA, LOCALAPPDATA or TEMP.
+- Distinct identity: `com.vhick.caprine.portable` and stable toast GUID `{E79A08F5-09E3-4F25-988A-7C0BB6096C60}`. Notifications and click actions are kept active (requiring manual Windows validation).
+- App updates disabled while portable: source adapter bypasses `electron-updater` in portable mode and hides the Automatic Updates and Launch at Login menu items. Upgrades are handled by the builder.
+- Real launcher: C# .NET 8 WinExe, single-file, self-contained x64, compiled by GitHub-hosted Windows. Forwards CLI arguments and runs `App/Caprine/Caprine.exe` using the **launcher location**, with `CAPRINE_PORTABLE_DATA` environment set. Uses Windows Job Objects to wait for Electron child processes where possible.
+- TraceGuard: **no general AppData scavenger**. Primary Caprine data is redirected before application initialization. A narrow launcher ShellGuard examines Windows Start Menu notification shortcuts with exact allowed names and recovers only *new* shortcuts whose resolved target equals the packaged `Caprine.exe`. Newly created exclusively owned CLSID registration can be backed up and selectively removed. Pre-existing state is never removed. If ownership or process lifetime cannot be verified, changes are preserved and logged.
+- Windows-managed shell caches, notification database history, DPAPI-protected browser credentials, temporary OS files, explicitly saved user downloads and other external activity cannot be promised to disappear.
+- Output: `CaprinePortable-<upstream>-x64-r1.zip`, `CaprinePortable-vhick_<PackageVersion>_custom-nsis-r1.paf.exe` (final exact installer filename is determined by pinned shared Package Builder). Publisher creates `SHA256SUMS.txt` in the GitHub Release.
+- PackageVersion includes numeric revision as its fourth component (`2.62.1.1` for r1, `2.62.1.2` for r2) to satisfy PortableApps upgrade version ordering. The AppID uses a distinct unofficial-provider suffix `CaprinePortable-vhick` to avoid official-package identity collisions.
+- Release tag includes upstream version, source commit prefix, lockfile hash prefix, builder source hash prefix and revision, e.g. `portable-v2.62.1-<commit8>-<lock8>-<builder8>-r1`. It is not based on the publisher's version.
 
-| Component | Reference | Responsibilities |
-| --- | --- | --- |
-| Upstream application | `https://github.com/bankjaneo/caprine` | Official stable source tag selected through GitHub Releases API, then cloned to `_upstream` |
-| Installer package builder | `vhick/Portable-Package-Builder@v1.0.0` | `custom-nsis` independent PortableApps-style `.paf.exe`; optional `official` experimental mode with pinned trusted URL + SHA |
-| Release publisher | `vhick/portable-release-publisher@v1.1.1` | Release assets, SHA256SUMS.txt, draft-first upload, duplicate protection, release privacy |
-| Windows runtime | Node.js 24; .NET 9 SDK; Python Pillow 11.3.0 | TypeScript/Electron build, NativeAOT launcher, authentic upstream icon conversion |
+## Required limitations and safety rules
 
-`scripts/verify-integrations.ps1` runs *before compilation* and uses `git ls-remote` to record both pinned tags' resolved commits, retrieves the exact tagged `action.yml` files, and checks required input/output names. The results are written to `work/verified-integrations.json` and included under `Other/Source/` in new application builds. The workflow does not replace your pins with a newer release.
+- **Source and launcher build not verified in this environment.** The offline fixture tests are not a substitute for Windows compilation or launching Messenger. On Windows, validate sign-in, notifications, tray behavior, shell backups and the installer in a test account **before** relying on it.
+- The upstream `autoUpdater` normally replaces installed apps. This portable build bypasses that feature; use manual GitHub Releases instead.
+- The package is **x64 only**, not ARM64. A different target needs its own build, launcher runtime and verification.
+- Native Windows toast registration may create Windows-managed traces even after the newly owned shortcut and registry records are recovered. ShellGuard intentionally does not touch global Windows notification databases, Jump Lists or another application's data.
+- A process that escapes the job, a Windows user-created link indistinguishable from the same-name portable notification shortcut, or another process modifying the same registry entry can make cleanup ambiguous. In that case the launcher preserves host state and logs the reason. Do not run multiple copies of this package sharing Data.
+- A moved folder cannot automatically repair shell links already left on the old path. The guard preserves ambiguous state rather than deleting it.
+- Never use this kit to overwrite an installed Caprine profile. Existing installed Caprine data remains in its normal Windows profile.
+- Windows account-bound browser encryption may require signing in again after moving between accounts/computers; never weaken OS credential encryption.
+- This kit is not code signed. Do not bypass antivirus or Windows protection mechanisms. GitHub Actions success is not a signature or certification.
+- Some resource downloads by `electron-builder`, `npm`, or Chocolatey originate from the tools' configured official ecosystems. GitHub Actions, Node/.NET, NSIS and package managers are fetched as build-time dependencies; the kit does not require local tooling.
 
-**Verified shared action contract (web audit):** The package builder's action takes `source-dir`, `output-dir`, `engine`, `running-exe`, `timeout-seconds`, `package-revision`, `official-tool-url`, `official-tool-sha256`; returns `installer-file`, `installer-sha256`, `app-id`, `app-version`. The publisher's action takes `files`, `tag`, `release-title`, `tag-prefix`, `keep-releases`, `prune`, and `dry-run`. Pinned publisher accepts `.zip` and `.paf.exe` only. See `docs/AUDIT.md`.
+## How to inspect the release
 
-## Expected deliverables created BY GitHub Actions
+The publisher runs first with `dry-run: 'true'` and then `dry-run: 'false'` only after staging/ZIP validation. If the shared installer fails, the ZIP is still published, but the workflow ends **FAILED** so you notice it. `SHA256SUMS.txt` is auto-published by the verified shared Release Publisher. If the same exact managed release is already present, the workflow skips rebuilding. A conflicting/manual release with the same tag is a hard error.
 
-For the requested `PORTABLEAPPS` mode, one successful release has:
-
-- `CaprinePortable_<UPSTREAM-VERSION>_r5.zip` — directly extractable, with a native `CaprinePortable.exe` at the root and `Data/` next to it.
-- `CaprinePortable_<X.Y.Z.0>_custom-nsis-r5.paf.exe` — independent NSIS installer generated by the shared Portable Package Builder; **not** officially endorsed/certified.
-- `SHA256SUMS.txt` — added by the shared release publisher, containing hashes of released ZIP and installer.
-
-The actual installer filename is taken from `steps.pkg.outputs.installer-file`, never guessed or renamed. Its provenance JSON from the shared packager is verified, and a real unattended installation/reinstallation fixture is run for the default `custom-nsis` engine. Optional official mode does not claim this unattended NSIS fixture applies to its distinct engine.
-
-If the shared installer build fails, the ZIP still publishes under a clearly labeled **`-ziponly`** release tag if its independent tests passed; the workflow then **fails** rather than reporting a complete build. Repackage later with the separate workflow (or rerun after a fix). If compilation/ZIP validation fails, no package is published.
-
-## Portable layout
-
-```text
-CaprinePortable/
-├── CaprinePortable.exe          <- compiled NativeAOT Windows launcher
-├── App/
-│   ├── Caprine/                 <- full electron-builder win-unpacked tree
-│   ├── AppInfo/
-│   │   ├── appinfo.ini
-│   │   ├── appicon.ico
-│   │   ├── appicon_16.png
-│   │   ├── appicon_32.png
-│   │   ├── appicon_75.png
-│   │   ├── appicon_128.png
-│   │   └── Launcher/CaprinePortable.ini
-│   └── DefaultData/
-├── Data/                        <- initially empty; NEVER overwritten by installer
-│   ├── Profile/                 <- created by launcher: Messenger session and app settings
-│   └── TraceGuard/              <- created by launcher: journal, logs, recovered paths
-└── Other/Source/                <- license, upstream commit, provenance, action hashes
-```
-
-**Do not open `App/Caprine/Caprine.exe` directly.** Use the root compiled launcher; direct execution bypasses the portable environment variable and may create host AppData profiles.
-
-## Portability and TraceGuard design
-
-Caprine has Electron/Chromium user data and uses `electron-store` for settings. The source patch inserts `portable-paths.ts` as the first import in both the application entry and its store module. It sets `app.setPath('userData', ...)`, `app.setPath('sessionData', ...)`, `app.setAppLogsPath(...)`, and Chromium's `user-data-dir` command switch **before** profile initialization. The launcher provides `CAPRINE_PORTABLE_DATA=<portable root>/Data/Profile` and forwards arguments. Windows shell folder paths and downloaded user documents aren't replaced globally.
-
-Upstream's normal automatic updating is disabled in the portable build, including its menu toggle; update only using **this independent package**. Running the upstream installer/updater over a portable install is not supported.
-
-**TraceGuard monitored scopes:** `%APPDATA%\Caprine` and `%LOCALAPPDATA%\Caprine`. The first is Electron's typical Caprine profile fallback; the second is a conservative Caprine-name-specific recovery location, **not proof** upstream writes there. We intentionally DO NOT monitor shared `%APPDATA%`, `%LOCALAPPDATA%`, `%PROGRAMDATA%`, `SquirrelTemp`, browsers, or PowerShell-wide folders. These host locations are shared and cannot safely be harvested by a launcher.
-
-At launch the launcher snapshots the *presence of each scope root* in a recoverable journal. If a host scope existed before launch, it remains host-owned and is never moved, deleted or modified by TraceGuard. If a scope was absent and appears during the portable session, a full directory traversal (including nested empty folders) copies it into `Data/TraceGuard/Recovered/<Roaming|Local>/Caprine`. A successful copy is content-verified before deleting the owned source; on failure the source remains for recovery. Existing conflicting copies go to `Data/TraceGuard/Conflicts`; journal and logs are kept in `Data/TraceGuard`. Later launches restore previously captured application-owned scope data *only when its original host path is absent*.
-
-If the launcher crashes mid-session, the next launch consults `session.json` and retries recovery of paths recorded as owned, provided their absolute host paths still match. Files inaccessible due to active processes are logged and kept. Application-owned Electron toast registry entries are scoped by recorded launcher executable and per-run existing-key snapshots; only newly created keys with the exact expected Electron layout are deleted on a clean exit or recoverable crash. Reparse points/junctions are rejected for moving/copying.
-
-**Limitations that matter:** Detecting and attributing *every previously unknown* path created by Electron or Windows is not universally safe without instrumentation, ETW traces, or OS-wide monitoring. This r5 launcher deliberately has a narrow, **owner-checked** scope rather than attributing all new files on the computer to Caprine. If an existing host Caprine folder is present, even new children inside it will not be captured, because ownership is ambiguous. Do not interpret this as a guarantee of zero Windows traces. OS notifications, DNS caches, Defender scans, system temp files, file-access history, DPAPI protections, and user-requested downloads can still be host-specific. Portable sessions encrypted with user/OS keys might require signing in again on another PC.
-
-## New in r5: Windows toast shortcuts and COM activator recovery
-
-Source proof: [Electron 43.8.6 notification activator](https://raw.githubusercontent.com/electron/electron/v43.8.6/shell/browser/notifications/win/windows_toast_activator.cc) calls `EnsureShortcut()` and `EnsureCLSIDRegistry()` for unpackaged apps. These write respectively to the current user's Start Menu `Programs` folder and `HKCU\Software\Classes\CLSID`. The [pinned shared NSIS installer](https://raw.githubusercontent.com/vhick/Portable-Package-Builder/v1.0.0/nsis/community-installer.nsi) contains no shortcut-creation step.
-
-The portable build uses a distinct display/notification identity, **Caprine Portable**, while retaining `App\Caprine\Caprine.exe`. That separates it from any conventional Caprine installation with the standard `Caprine.lnk`. The shell guard watches only the exact **`Caprine Portable.lnk`** entry and registry CLSID keys whose `LocalServer32` points to this portable executable. It never sweeps the whole `Programs` directory or deletes existing host keys. During execution the shortcut may temporarily exist (Windows toast notifications need it); after fully quitting from the tray, the launcher copies the new shortcut into `Data\TraceGuard\Recovered\StartMenu` before deleting that owned source. On next launch, a previous incomplete journal is recovered. New Electron toast CLSID registrations are removed if their layout and target still exactly match.
-
-**Conflict protection:** If the unique `Caprine Portable.lnk` already exists and was *not* created during a recorded interrupted session, r5 refuses to start rather than allow Electron to overwrite a potentially host-owned shortcut. Check its Properties → Shortcut → Target yourself. Do not indiscriminately delete other programs' shortcuts or CLSID keys.
-
-**Existing r4 traces:** r4 used the standard name `Caprine.lnk`. r5 deliberately does not remove it or any previously created CLSID entry. To inspect manually, press Win+R → `shell:programs`, look for **Caprine.lnk**, right-click → Properties, and check whether its target points to the specific old portable app's `App\Caprine\Caprine.exe`. Remove it manually **only if you confirm it belongs to r4**. A standard Caprine installation may own an identically named shortcut, which must be kept.
-
-**Remaining limitations:** Windows notification history, OS-managed toast databases, user download folders, DNS, Windows activity records, and unrelated system integration are not moved or erased. A notification clicked after the app has fully exited may fail to relaunch the portable app because its temporary shortcut has been removed. This is the tradeoff for not leaving a permanent Start Menu link.
-
-**Manual r5 acceptance:** Run `CaprinePortable.exe`, sign in, trigger a real Windows toast notification while Caprine is in the background, and check that a new `Caprine Portable.lnk` appears temporarily under `shell:programs`. Exit Caprine **from its system tray menu**. Confirm the shortcut disappears and a recovered copy exists under `Data\TraceGuard\Recovered\StartMenu`. Check `Data\TraceGuard\shell-guard.log`. Reopen, repeat, and confirm the standard installed Caprine remains unaffected. The unattended Windows fixture checks controlled test keys, not actual toast delivery.
-
-## Build using GitHub Desktop (step by step)
-
-1. On GitHub.com, create a new empty repository such as `Caprine-PortableApps-Builder`. **Do not fork** the upstream Caprine repository. Choose **Public** if your release is intended for public redistribution; otherwise choose **Private**. Never change visibility through the workflows.
-2. Open GitHub Desktop → **File → Clone repository** → select your newly created builder repo.
-3. Download this builder kit ZIP and extract its *contents*, including the hidden `.github` folder, into your locally cloned repository's root. You should see `.github/workflows/`, `scripts/`, `launcher/`, `tests/`, `README.md` at the root. No extra nested builder-kit folder.
-4. In GitHub Desktop, verify files are shown under **Changes**. Use commit summary `Update Caprine PortableApps Builder r4`; select **Commit to main** → **Push origin**.
-5. On GitHub.com open the builder repository → **Actions** → enable workflows if prompted.
-6. Open **Actions → Build Caprine PortableApps (source to Releases) → Run workflow**. Leave `upstream_version` blank to fetch latest stable. Leave `force_rebuild` unchecked and `engine` at **custom-nsis**. Do not fill official tool fields for the default engine.
-7. Monitor the Windows job. Resolve/input verification is first, then source compilation, native EXE, TraceGuard fixture, ZIP, shared installer, installer upgrade fixture, publisher dry-run, and actual release upload.
-8. Open the builder repository's **Releases** page. Select `portable-v<upstream version>-r4-r4` and download the ZIP and independently labeled `.paf.exe`. Compare `SHA256SUMS.txt` if desired.
-9. **Installer option:** close any running Caprine process (including tray). If you use the PortableApps Platform, place the installer alongside the platform directory or select the platform's `PortableApps` folder. Run the `.paf.exe` and carefully confirm the selected destination. It is an independent community installer.
-10. **ZIP option:** close the app and extract `CaprinePortable/` under `X:\PortableApps\CaprinePortable\`. Do not put a second nested `PortableApps` folder around it. If updating with ZIP, keep `Data/` and inspect old `App/` for personal files first; do not extract a ZIP over a running app.
-11. In the PortableApps Platform menu, select **Apps → Refresh App Icons**, then launch **Caprine Portable**. The launcher executable is `CaprinePortable.exe` at the root; this is what you should use outside the menu, too.
-12. After logging in, change a preference, exit Caprine through its **tray → Quit** menu, and verify `Data/Profile/` remains populated. Restart and confirm settings/session persistence. Move `CaprinePortable/` to a new drive/path when fully closed and repeat.
-13. Recovered external Caprine data, if any, is under `Data/TraceGuard/Recovered/Roaming/Caprine/` and `Data/TraceGuard/Recovered/Local/Caprine/`; conflicts, log and journal are under `Data/TraceGuard`. **Completely empty directories are meaningful** and must remain intact.
-14. To rebuild an already published ZIP without compiling Caprine: **Actions → Package only → Run workflow**. Enter its existing full `source_release_tag`, such as `portable-v2.62.1-r4-r4`, and choose new `package_revision=r5`. The workflow fetches ZIP and `SHA256SUMS.txt` from your builder's own GitHub Release, verifies the SHA-256, inspects the root launcher, uses the shared packager, and publishes a new `-r4-r5` release.
-15. Future updates: rerun the main workflow to resolve the next stable upstream release. Close Caprine first; install the new community installer into the same `CaprinePortable` folder. Keep `Data/` intact. For rollback to an older application version, first copy `Data/` to a safe backup; old binaries may not be compatible with newer saved profiles.
-
-If the app runs but a folder remains in AppData/LocalAppData, check `Data/TraceGuard/traceguard.log`. A pre-existing host Caprine profile is deliberately protected. Collect the *exact path and provenance* before changing TraceGuard allowlisted scopes; never just move the parent AppData directory.
-
-## Validation performed by GitHub Actions
-
-- Stable release and Git commit recorded; source tag version/licensing checked against `package.json`.
-- Source-level portability patch applies only when the known upstream text matches, preventing unsafe silent patch drift.
-- Real TypeScript + Electron Windows `--dir` binaries compiled once; authentic Caprine PNG icon converted to ICO + PNG sizes.
-- .NET 9 NativeAOT launcher compiled and independently invoked with `--traceguard-selftest` and `--shellguard-selftest` (no GUI). Tests new file, nested file, empty directory, nested empty directory, persistence, crash recovery, and pre-existing host data protection.
-- Launcher/Caprine PE headers, PortableApps metadata/icons and missing/symlinked files verified.
-- ZIP independently tested with Python `zipfile.testzip()`, including explicit empty `Data/` and `App/DefaultData/` entries.
-- Pinned shared packager output provenance `.json`, SHA256 and `.paf.exe` verified. The default independent NSIS installer is run *unattended* into an isolated path, then run again to test an upgrade, obsolete `App/` file cleanup, `Data/` preservation and an empty directory tree.
-- Pinned shared publisher run in dry-run first, then publishes from the same Windows job, without `actions/upload-artifact` or other intermediate Actions storage. Default prune=false. Windows PowerShell release-filter regression runs before compilation; existing matching release tag causes compilation to be skipped unless force selected.
-
-### Manual acceptance (NOT proven by unattended CI)
-
-Test on a real Windows desktop with a separate/fresh Windows user where practical: direct launcher; PortableApps Platform discovery; login, cookies, message sending and notifications; audio/video call permissions; real tray close/exit; repeated launch; profile relocation to another drive; host Caprine existing profile protection; actual upgrade between two upstream versions; recovering from a power failure; rollback onto a backup of `Data/`; whether any unexpected app-owned residual paths appear outside monitored scopes; checking Windows Security/Defender for actual reputation outcomes.
-
-Unattended Actions runners are **not** suitable for assuming that Messenger's interactive login/call GUI works. This kit deliberately does not launch Messenger interactively during CI tests.
-
-## Data safety and installer upgrade limitations
-
-The pinned shared NSIS installer stages a new `App`, `Other`, and launcher and backs up the old managed copies, *without packaging or overwriting `Data`*. It checks AppID, optionally refuses running EXEs, and restores staged `App`/`Other` on detected deployment errors. Its cleanup intentionally replaces old `App` trees. **Do not place user documents inside `App/` or `Other/`**; the shared installer's replacement mechanism does not guarantee preservation of unusual user files stored there. Keep personal data in `Data/` or another separately backed-up location.
-
-An interrupted installer may leave `.__UPB_Backup` or `.__UPB_Stage` next to the portable directory. **Do not delete these folders blindly**; inspect the contents to recover the old app. A rollback to old app binaries cannot guarantee automatic downgrade of newer Messenger/Electron profile format, so back up `Data/` before downgrading.
-
-**GitHub Free efficiency:** manual triggers only, one Windows job per workflow, skip already published versions by default, no upload-artifact, no LFS, minimum shared action reuse, controlled concurrency. Releases still consume repository storage/bandwidth and Windows-hosted Actions minutes; policies/quotas vary by account and repository visibility. Public/private package visibility follows your own builder repository.
-
-## Known issues / troubleshooting
-
-| Problem | What to inspect |
-| --- | --- |
-| Tag resolver says no stable release | r3 introduced correct selection; r4 additionally fixed the missing-release exit code. r3 explicitly enumerates API array results; check printed total/eligible counts. Test `scripts/test-release-selection.ps1`. Do not use an arbitrary main-branch fallback. |
-| TypeScript compile or patch fails | Upstream changed profile/updater code; inspect `source/config.ts`, `source/index.ts`, `source/menu.ts`, do not bypass the guard. |
-| Electron builder failed | Review Node 24/npm lockfile, Windows x64 native dependencies, or electron-builder cache. |
-| NativeAOT compilation failed | Review `.NET 9` Windows x64 C++ native toolchain and `launcher/Program.cs`; no CMD launcher fallback. |
-| Installer fails but ZIP succeeds | Workflow publishes independent `-ziponly` release and reports FAILED; rerun packaging-only with new package revision when fixed. |
-| Caprine seems to stay open | It may be minimized to tray; use Quit, not only window X. |
-| No settings survive | Ensure use of root `CaprinePortable.exe`, not `App/Caprine/Caprine.exe`. |
-| AppData path left behind | If it existed before starting, TraceGuard protects it. Inspect journal/logs; do not remove shared host data. |
-| Reusing source ZIP | Packaging-only requires the exact previous same-repo publisher ZIP + SHA256SUMS.txt, never unchecked user-supplied ZIPs. |
-| Antivirus warning | New unsigned launcher/installer may have low reputation; code is readable and not obfuscated. Never disable AV or add exclusions without your own independent review. |
-
-## Licenses and source references
-
-- Original Caprine project and bankjaneo-maintained fork: MIT; see `license` in the actual selected stable source tag.
-- Builder-specific scripts and launcher: MIT, see `LICENSE`.
-- Caprine is unofficial and not affiliated with Facebook/Meta.
-- Installer engine: shared [Portable Package Builder](https://github.com/vhick/Portable-Package-Builder) `v1.0.0`, independent NSIS.
-- Publisher: shared [Universal Release Publisher](https://github.com/vhick/portable-release-publisher) `v1.1.1`.
-- Official PortableApps.com brand/certification is not implied. Upstream third-party dependencies carry their respective licenses; review Electron and npm production dependency notices when redistributing.
+Full details: `docs/AUDIT.md`, `docs/WINDOWS-ACCEPTANCE.md`, `docs/SAFETY-AND-UPGRADES.md`, `docs/BUILD-VERIFY.md`.

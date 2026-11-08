@@ -1,0 +1,176 @@
+name: Build and Release Caprine PortableApps
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_version:
+        description: 'Stable version (latest or 2.62.1); prereleases are rejected'
+        required: true
+        default: latest
+        type: string
+      builder_revision:
+        description: 'Builder/package revision (r1, r2, etc.)'
+        required: true
+        default: r1
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: caprine-portableapps-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  portableapps:
+    name: Source, build, stage, package and publish
+    runs-on: windows-latest
+    timeout-minutes: 100
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: utf-8
+      GH_TOKEN: ${{ github.token }}
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - name: Checkout standalone builder
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install pinned Python packaging dependency
+        run: |
+          python -m pip install --disable-pip-version-check Pillow==11.3.0
+          if ($LASTEXITCODE -ne 0) { throw 'Pillow installation failed' }
+      - name: Static builder tests (no GUI claims)
+        run: |
+          python -m unittest discover -s tests -p 'test_*.py' -v
+          if ($LASTEXITCODE -ne 0) { throw 'Offline tests failed' }
+      - name: Verify pinned shared action contracts
+        run: |
+          python scripts/check_actions.py
+          if ($LASTEXITCODE -ne 0) { throw 'Shared action interface verification failed' }
+      - name: Resolve stable upstream source and clone exact SHA
+        id: upstream
+        env:
+          VERSION_INPUT: ${{ inputs.upstream_version }}
+        run: |
+          python scripts/resolve.py --version $env:VERSION_INPUT --clone work/upstream --out work/identity.json
+          if ($LASTEXITCODE -ne 0) { throw 'Stable source resolution failed' }
+      - name: Calculate exact build identity
+        id: identity
+        env:
+          BUILD_REV: ${{ inputs.builder_revision }}
+        run: |
+          python scripts/identity.py --root . --identity work/identity.json --revision $env:BUILD_REV
+          if ($LASTEXITCODE -ne 0) { throw 'Build identity failed' }
+      - name: Avoid duplicate identical published build
+        id: existing
+        env:
+          RELEASE_TAG: ${{ steps.identity.outputs.tag }}
+        run: |
+          python scripts/check_existing.py --repo $env:GITHUB_REPOSITORY --tag $env:RELEASE_TAG
+          if ($LASTEXITCODE -ne 0) { throw 'Release ownership check failed' }
+      - name: Setup build toolchain (Node 24)
+        if: steps.existing.outputs.skip != 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Setup launcher toolchain (.NET 8)
+        if: steps.existing.outputs.skip != 'true'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Apply Caprine-specific portable source adapter
+        if: steps.existing.outputs.skip != 'true'
+        run: |
+          python scripts/patch_caprine.py work/upstream
+          if ($LASTEXITCODE -ne 0) { throw 'Source adapter failed' }
+      - name: Build actual upstream Caprine sources (x64)
+        if: steps.existing.outputs.skip != 'true'
+        working-directory: work/upstream
+        run: |
+          npm ci --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'npm ci failed' }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { throw 'TypeScript upstream build failed' }
+          # The --dir switch produces unpacked binaries; no upstream NSIS installer is built.
+          & .\node_modules\.bin\electron-builder.cmd --win --x64 --dir --publish never
+          if ($LASTEXITCODE -ne 0) { throw 'Electron Windows packaging failed' }
+      - name: Build genuine compiled C# Windows PE launcher
+        if: steps.existing.outputs.skip != 'true'
+        run: |
+          dotnet publish launcher/CaprineLauncher.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:PublishTrimmed=false -p:DebugType=none -o work/launcher
+          if ($LASTEXITCODE -ne 0) { throw 'Launcher compilation failed' }
+          if (-not (Test-Path 'work/launcher/CaprinePortable.exe')) { throw 'Compiled launcher EXE missing' }
+      - name: Stage and validate independent PortableApps ZIP
+        if: steps.existing.outputs.skip != 'true'
+        env:
+          BUILD_REV: ${{ inputs.builder_revision }}
+        run: |
+          python scripts/stage.py --source work/upstream --app work/upstream/dist/win-unpacked --launcher work/launcher/CaprinePortable.exe --stage work/stage/CaprinePortable --identity work/identity.json --revision $env:BUILD_REV
+          if ($LASTEXITCODE -ne 0) { throw 'Staging failed' }
+          $version = (Get-Content 'work/identity.json' -Raw -Encoding utf8 | ConvertFrom-Json).version
+          New-Item -ItemType Directory -Force -Path work/release | Out-Null
+          $zip = "work/release/CaprinePortable-$version-x64-$env:BUILD_REV.zip"
+          python scripts/validate.py --stage work/stage/CaprinePortable --version $version --revision $env:BUILD_REV --zip $zip
+          if ($LASTEXITCODE -ne 0) { throw 'PortableApps ZIP validation failed' }
+          Get-FileHash $zip -Algorithm SHA256 | Format-List
+      - name: Generate separate installer via pinned shared Package Builder
+        if: steps.existing.outputs.skip != 'true'
+        id: installer
+        continue-on-error: true
+        uses: vhick/Portable-Package-Builder@v1.0.0
+        with:
+          source-dir: work/stage/CaprinePortable
+          output-dir: work/installer
+          engine: custom-nsis
+          running-exe: CaprinePortable.exe
+          timeout-seconds: '900'
+          package-revision: ${{ inputs.builder_revision }}
+      - name: Validate installer only if generated
+        if: steps.existing.outputs.skip != 'true' && steps.installer.outcome == 'success'
+        env:
+          INSTALLER_PATH: ${{ steps.installer.outputs.installer-file }}
+          EXPECTED_SHA: ${{ steps.installer.outputs.installer-sha256 }}
+        run: |
+          $p = $env:INSTALLER_PATH
+          if (-not (Test-Path -LiteralPath $p -PathType Leaf)) { throw 'Installer absent' }
+          if (-not $p.EndsWith('.paf.exe')) { throw 'Unexpected installer extension' }
+          $actual = (Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $env:EXPECTED_SHA.ToLowerInvariant()) { throw 'Installer checksum mismatch' }
+          Copy-Item -LiteralPath $p -Destination work/release -ErrorAction Stop
+          Write-Host "STATIC-VALIDATED installer SHA256: $actual"
+      - name: Publisher dry run first
+        if: steps.existing.outputs.skip != 'true'
+        uses: vhick/portable-release-publisher@v1.1.1
+        with:
+          files: work/release/*
+          tag: ${{ steps.identity.outputs.tag }}
+          tag-prefix: portable-
+          release-title: Caprine Portable ${{ steps.upstream.outputs.version }} (${{ inputs.builder_revision }})
+          keep-releases: '3'
+          prune: 'false'
+          dry-run: 'true'
+      - name: Publish independently validated ZIP and available installer
+        if: steps.existing.outputs.skip != 'true'
+        uses: vhick/portable-release-publisher@v1.1.1
+        with:
+          files: work/release/*
+          tag: ${{ steps.identity.outputs.tag }}
+          tag-prefix: portable-
+          release-title: Caprine Portable ${{ steps.upstream.outputs.version }} (${{ inputs.builder_revision }})
+          keep-releases: '3'
+          prune: 'false'
+          dry-run: 'false'
+      - name: Report installer failure without losing validated ZIP
+        if: steps.existing.outputs.skip != 'true' && steps.installer.outcome == 'failure'
+        run: |
+          Write-Error 'Installer FAILED. The validated ZIP has been separately published. CI remains red.'
+          exit 1
+      - name: Report exact-build duplicate skip
+        if: steps.existing.outputs.skip == 'true'
+        run: Write-Host 'Exact managed release already exists. No compile or publication needed.'
